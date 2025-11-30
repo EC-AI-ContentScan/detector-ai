@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Detector Combinado — Caracteres Ocultos + IA + Plágio</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --text:#0f1724; --muted:#6b7280; --accent:#2563eb;
+    --success:#16a34a; --danger:#dc2626; --glass: rgba(255,255,255,0.6);
+  }
+  [data-theme="dark"]{
+    --bg:#071124; --card:#071b2a; --text:#e6f0ff; --muted:#9aa8bf; --accent:#60a5fa;
+    --success:#4ade80; --danger:#fb7185; --glass: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background:linear-gradient(180deg,var(--bg), #e6eefb 120%); color:var(--text); padding:24px;}
+  .wrap{max-width:1000px; margin:0 auto;}
+  .card{background:var(--card); border-radius:12px; padding:18px; box-shadow:0 6px 20px rgba(2,6,23,0.08); margin-bottom:18px}
+  h1{margin:0 0 6px; font-size:20px}
+  p.lead{margin:0 0 12px; color:var(--muted)}
+  textarea{width:100%; min-height:220px; padding:12px; border-radius:8px; border:1px solid #d1d5db; resize:vertical; font-size:15px; color:var(--text); background:transparent}
+  .controls{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  button{background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600}
+  button.ghost{background:transparent; color:var(--accent); border:1px solid rgba(0,0,0,0.06)}
+  .row{display:grid; grid-template-columns:1fr 340px; gap:16px}
+  .stats-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px}
+  .stat{background:var(--glass); border-radius:8px; padding:10px}
+  .stat .n{font-weight:700; font-size:18px}
+  .result-area{white-space:pre-wrap; padding:10px; border-radius:8px; background:linear-gradient(180deg,#fbfdff,#f5f8ff); border:1px solid #e6eef9; min-height:140px; overflow:auto}
+  .bad{color:var(--danger); font-weight:700}
+  .good{color:var(--success); font-weight:700}
+  .hidden-highlight{background: #fff3bf; padding:2px 4px; border-radius:4px; border:1px solid rgba(0,0,0,0.05)}
+  .bar{height:12px; background:#e6eef9; border-radius:8px; overflow:hidden}
+  .bar > i{display:block; height:100%; background:linear-gradient(90deg,#ff7a7a,#ffd24d); width:0%}
+  .small{font-size:13px; color:var(--muted)}
+  .top-actions{display:flex; gap:8px; justify-content:flex-end}
+  .legend{display:flex; gap:10px; flex-wrap:wrap; margin-top:8px}
+  .legend .item{display:flex;gap:6px; align-items:center}
+  .swatch{width:14px;height:14px;border-radius:4px}
+  .swatch.hidden{background:#fff3bf;border:1px solid #ffd66b}
+  .swatch.ia{background:#ffb4a2}
+  .swatch.plag{background:#fca5a5}
+  footer{margin-top:14px; font-size:13px; color:var(--muted)}
+  @media (max-width:920px){ .row{grid-template-columns:1fr} .stats-grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body data-theme="">
+<div class="wrap">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <h1>Detector: Caracteres Ocultos + IA + Plágio</h1>
+        <p class="lead">Cole o texto abaixo. A ferramenta analisa caracteres Unicode suspeitos, estima probabilidade de texto gerado por IA (heurísticas) e procura trechos de plágio em um banco local.</p>
+      </div>
+      <div class="top-actions">
+        <button onclick="toggleTheme()" class="ghost" title="Alternar tema">Toggle Dark</button>
+        <button onclick="downloadClean()" title="Baixar texto limpo">Baixar Texto Limpo</button>
+        <button onclick="downloadReport()" title="Baixar relatório">Baixar Relatório</button>
+      </div>
+    </div>
+
+    <textarea id="inputText" placeholder="Cole aqui o texto que deseja analisar..."></textarea>
+
+    <div class="controls">
+      <button onclick="runAnalysis()">Analisar (IA + Unicode + Plágio)</button>
+      <button onclick="cleanHidden()">Remover Caracteres Ocultos</button>
+      <button onclick="copyClean()">Copiar Texto Limpo</button>
+      <button onclick="showHighlighted()">Mostrar Ocultos Destacados</button>
+      <div style="flex:1"></div>
+      <div class="small">Versão local • Sem envio de dados ao servidor</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3>Resultados</h3>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat"><div class="n" id="totalChars">0</div><div class="small">Total de caracteres</div></div>
+        <div class="stat"><div class="n" id="hiddenCount">0</div><div class="small">Caracteres ocultos</div></div>
+        <div class="stat"><div class="n" id="cleanedCount">0</div><div class="small">Caract. removidos (últ.)</div></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div class="small">Probabilidade IA estimada</div>
+        <div class="bar" style="margin-top:6px"><i id="iaBar"></i></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <div class="small">Score: <strong id="iaScore">0%</strong></div>
+          <div class="small">Burstiness: <strong id="burst">-</strong></div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div class="small">Perplexidade (simulada)</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <div class="small"><strong id="perp">0</strong></div>
+          <div class="small" id="lex">Diversidade léxica: -</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="small">Plágio local</div>
+        <div id="plagResult" class="small">Nenhum trecho do banco local foi detectado.</div>
+      </div>
+
+      <div class="legend" style="margin-top:12px">
+        <div class="item"><div class="swatch hidden"></div><div class="small">Caracteres ocultos</div></div>
+        <div class="item"><div class="swatch ia"></div><div class="small">Indicador IA</div></div>
+        <div class="item"><div class="swatch plag"></div><div class="small">Plágio</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Saída com destaques</h3>
+      <div id="resultArea" class="result-area">Resultado aparecerá aqui.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Detalhes e Diagnóstico</h3>
+    <div id="diagnostics" class="result-area">Relatório detalhado aparecerá aqui após análise.</div>
+    <footer>Observação: essa ferramenta usa heurísticas locais — não existe detecção 100% confiável. Para detector mais avançado, integrar modelos de linguagem ou medir perplexidade real via API.</footer>
+  </div>
+</div>
+
+<script>
+/* ============================
+   CONFIGURAÇÃO / BANCO LOCAL
+   ============================ */
+const hiddenRegex = /[\u200B\u200C\u200D\u00A0\u202F\u2060\uFEFF\u200E\u200F\u202E\u2011\u00AD]/g;
+const highlightCharsSet = new Set(['\u200B','\u200C','\u200D','\u00A0','\u202F','\u2060','\uFEFF','\u200E','\u200F','\u202E','\u2011','\u00AD']);
+
+// banco local simples para "plágio" (expanda conforme necessário)
+const plagioBanco = [
+  "a tecnologia está transformando o mundo",
+  "o brasil é um dos maiores produtores de alimentos",
+  "a mineração desempenha um papel crucial na economia",
+  "a inteligência artificial tem potencial para transformar setores inteiros"
+];
+
+/* ============================
+   UTILITÁRIOS BÁSICOS
+   ============================ */
+function setText(id, text){ document.getElementById(id).innerText = text; }
+function setHTML(id, html){ document.getElementById(id).innerHTML = html; }
+function pct(v){ return Math.max(0, Math.min(100, Math.round(v))); }
+
+/* ============================
+   THEME
+   ============================ */
+function toggleTheme(){
+  const el = document.body;
+  if(el.getAttribute('data-theme') === 'dark') el.setAttribute('data-theme','');
+  else el.setAttribute('data-theme','dark');
+}
+
+/* ============================
+   LIMPEZA / DESTACAR CARACTERES
+   ============================ */
+let lastCleanedCount = 0;
+function cleanHidden(){
+  const ta = document.getElementById('inputText');
+  const before = ta.value;
+  const cleaned = before.replace(hiddenRegex, ' ');
+  lastCleanedCount = (before.match(hiddenRegex)||[]).length;
+  ta.value = cleaned;
+  setText('cleanedCount', lastCleanedCount);
+  runAnalysis(); // re-analisar automaticamente
+}
+
+function showHighlighted(){
+  const text = document.getElementById('inputText').value || '';
+  // substituir apenas caracteres ocultos por marcação legível (preservar resto)
+  let out = '';
+  for(let ch of text){
+    if(highlightCharsSet.has(ch)){
+      const code = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
+      out += `<span class="hidden-highlight" title="U+${code}">U+${code}</span>`;
+    } else {
+      out += escapeHtml(ch);
+    }
+  }
+  setHTML('resultArea', out || '<span class="small">(texto vazio)</span>');
+}
+
+/* ============================
+   HEURÍSTICAS DE DETECÇÃO IA
+   ============================ */
+function tokenizeSentences(text){
+  // divisão simples por sentenças
+  return text.split(/[.!?]+/).map(s=>s.trim()).filter(Boolean);
+}
+function tokenizeWords(text){
+  // split básico; preserva palavras com acentos
+  return text.split(/\s+/).map(w=>w.trim()).filter(Boolean);
+}
+
+function lexicalDiversity(words){
+  if(words.length === 0) return 0;
+  const s = new Set(words.map(w=>w.toLowerCase()));
+  return s.size / words.length;
+}
+
+function burstinessMetric(sentences){
+  if(sentences.length === 0) return 0;
+  const lens = sentences.map(s => tokenizeWords(s).length);
+  const avg = lens.reduce((a,b)=>a+b,0)/lens.length;
+  const variance = lens.map(l => (l-avg)**2).reduce((a,b)=>a+b,0)/lens.length;
+  const sd = Math.sqrt(variance);
+  // lower burstiness → more uniform sentence length (characteristic de alguns geradores de IA)
+  return sd / (avg || 1);
+}
+
+function simulatedPerplexity(text){
+  // Estimativa simples: baixa diversidade => "baixa perplexidade" (mais provável IA)
+  const words = tokenizeWords(text);
+  if(words.length === 0) return 100;
+  const lex = lexicalDiversity(words); // 0..1
+  // mapear inverso: lex baixo -> perplexidade baixa numericamente
+  return Math.round((1 - lex) * 100);
+}
+
+/* heurística combinada: combinar sinais em um score 0..100 */
+function computeIAScore(text){
+  if(!text || text.trim().length === 0) return 0;
+  const sentences = tokenizeSentences(text);
+  const words = tokenizeWords(text);
+  const lexDiv = lexicalDiversity(words);
+  const burst = burstinessMetric(sentences);
+  const perp = simulatedPerplexity(text);
+
+  // sinais:
+  // - repetição de palavras (contagem de tokens com freq > threshold)
+  const freq = {};
+  words.forEach(w => { const k=w.toLowerCase(); freq[k]=(freq[k]||0)+1; });
+  const repeatedCount = Object.values(freq).filter(n => n > Math.max(3, Math.round(words.length*0.01))).length;
+
+  // conectivos e marcadores verbose comuns em textos gerados
+  const markers = ["portanto","além disso","consequentemente","conforme mencionado","de forma geral","em resumo","dito isto","por outro lado"];
+  let markerHits = 0;
+  const low = text.toLowerCase();
+  for(let m of markers) if(low.includes(m)) markerHits++;
+
+  // combinar com pesos (ajustáveis)
+  let score = 0;
+  score += pct(repeatedCount * 8);                // repetição
+  score += pct((1 - burst) * 30);                 // burstiness: lower burst -> increase score
+  score += pct((1 - lexDiv) * 25);                // baixa diversidade -> aumenta score
+  score += pct((100 - perp) * 0.15);              // perplexidade baixa -> aumenta
+  score += markerHits * 6;                        // marcadores
+
+  score = Math.round(Math.min(100, score));
+  return { score, burst: Math.round(burst*100)/100, lexDiv: Math.round(lexDiv*100)/100, perp };
+}
+
+/* ============================
+   DETECÇÃO DE PLÁGIO (LOCAL)
+   ============================ */
+function detectLocalPlagiarism(text){
+  if(!text) return null;
+  const low = text.toLowerCase();
+  for(const t of plagioBanco){
+    if(low.includes(t)) return t;
+  }
+  return null;
+}
+
+/* ============================
+   RUN / UI UPDATE
+   ============================ */
+function runAnalysis(){
+  const txt = document.getElementById('inputText').value || '';
+  setText('totalChars', txt.length);
+  const hiddenMatches = txt.match(hiddenRegex) || [];
+  setText('hiddenCount', hiddenMatches.length);
+
+  // IA
+  const ia = computeIAScore(txt);
+  setText('iaScore', ia.score + '%');
+  document.getElementById('iaBar').style.width = ia.score + '%';
+  setText('burst', ia.burst);
+  setText('perp', ia.perp);
+  setText('lex', 'Diversidade léxica: ' + ia.lexDiv);
+
+  // plagiarism
+  const plag = detectLocalPlagiarism(txt);
+  if(plag){
+    setText('plagResult', 'Trecho suspeito encontrado: "' + plag + '"');
+    document.getElementById('plagResult').className = 'small bad';
+  } else {
+    setText('plagResult', 'Nenhum trecho do banco local foi detectado.');
+    document.getElementById('plagResult').className = 'small';
+  }
+
+  // result area: highlight characters (visual) + summary
+  // highlight: show hidden chars wrapped inline but keep text readable
+  let displayed = '';
+  for(const ch of txt){
+    if(highlightCharsSet.has(ch)){
+      const code = ch.codePointAt(0).toString(16).toUpperCase().padStart(4,'0');
+      displayed += `<span class="hidden-highlight" title="U+${code}">U+${code}</span>`;
+    } else {
+      displayed += escapeHtml(ch);
+    }
+  }
+  if(displayed.trim()==='') displayed = '<span class="small">(texto vazio)</span>';
+  setHTML('resultArea', displayed);
+
+  // diagnostics
+  const diag = [
+    `— Score IA composto: ${ia.score}%`,
+    `— Burstiness (sd/avg): ${ia.burst}`,
+    `— Diversidade léxica: ${ia.lexDiv}`,
+    `— Perplexidade simulada: ${ia.perp}`,
+    `— Caracteres ocultos detectados: ${hiddenMatches.length}`,
+    `— Trechos de plágio local: ${plag ? '"' + plag + '"' : 'nenhum'}`,
+    '',
+    'Observações:',
+    '- Pontuação é estimativa baseada em heurísticas client-side.',
+    '- Para análise determinística, use modelos e medidas de perplexidade reais (requere backend/API).'
+  ].join('\n');
+  setText('diagnostics', diag);
+}
+
+/* ============================
+   EXPORT / COPY
+   ============================ */
+function downloadReport(){
+  const txt = document.getElementById('inputText').value || '';
+  const report = [
+    'Relatório — Detector Combinado',
+    'Data: ' + new Date().toLocaleString(),
+    '',
+    '--- Estatísticas ---',
+    'Total caracteres: ' + txt.length,
+    'Caracteres ocultos: ' + (txt.match(hiddenRegex)||[]).length,
+    'IA score: ' + document.getElementById('iaScore').innerText,
+    'Perplexidade (simulada): ' + document.getElementById('perp').innerText,
+    'Diversidade léxica: ' + document.getElementById('lex').innerText,
+    'Plágio local: ' + document.getElementById('plagResult').innerText,
+    '',
+    '--- Texto original ---',
+    txt,
+    '',
+    '--- Diagnostics ---',
+    document.getElementById('diagnostics').innerText
+  ].join('\n\n');
+
+  const blob = new Blob([report], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'relatorio_detector.txt'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadClean(){
+  const txt = (document.getElementById('inputText').value || '').replace(hiddenRegex, ' ');
+  const blob = new Blob([txt], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'texto_limpo.txt'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyClean(){
+  const cleaned = (document.getElementById('inputText').value || '').replace(hiddenRegex, ' ');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(cleaned).then(()=> alert('Texto limpo copiado para a área de transferência'));
+  } else {
+    prompt('Copiar (Ctrl+C, Enter):', cleaned);
+  }
+}
+
+/* ============================
+   ESCAPE HTML (segurança visual)
+   ============================ */
+function escapeHtml(str){
+  if(str === '') return '';
+  return str.replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]); });
+}
+
+/* ============================
+   Inicialização
+   ============================ */
+document.getElementById('inputText').addEventListener('input', () => {
+  // atualização em tempo real (leve)
+  runAnalysis();
+});
+
+runAnalysis(); // inicial
+
+</script>
+</body>
+</html>
